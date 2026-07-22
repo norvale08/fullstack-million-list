@@ -17,14 +17,14 @@ function available(){
 
 app.get("/state",(req,res)=>res.json({selected}));
 app.get("/left",(req,res)=>{
-    const q = Number(req.query.q||0), page = Number(req.query.page||0), size=20;
-    let arr=available().filter(x=>String(x).includes(String(q)));
-    res.json(arr.slice(page*size,page*size+size));
+    const q = req.query.q || "", page = Number(req.query.page||0), size = 20;
+    let arr = available().filter(x=>String(x).includes(q));
+    res.json(arr.slice(page*size, page*size+size));
 });
 
 app.get("/right",(req,res)=>{
-    const q = Number(req.query.q||0), page = Number(req.query.page||0), size=20;
-    let arr = selected.filter(x => String(x).includes(String(q)));
+    const q = req.query.q || "", page = Number(req.query.page||0), size=20;
+    let arr = selected.filter(x => String(x).includes(q));
     res.json(arr.slice(page*size, page*size+size));
 });
 

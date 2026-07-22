@@ -136,6 +136,8 @@ function App(){
     const [localSelected,setLocalSelected]=useState(new Set());
     const [localAdded,setLocalAdded]=useState(new Set());
     const [queueInfo,setQueueInfo]=useState({add:0,remove:0,reorder:0,select:0});
+    const [showModal,setShowModal]=useState(false);
+    const [modalInput,setModalInput]=useState("");
     
     const handleLocalSelect = (id) => {
         setLocalSelected(prev => new Set([...prev, id]));
@@ -182,10 +184,23 @@ function App(){
         return () => clearInterval(interval);
     },[]);
 
+    const openModal = () => {
+        setShowModal(true);
+        setModalInput("");
+        setError("");
+    };
+
+    const closeModal = () => {
+        setShowModal(false);
+        setModalInput("");
+    };
+
     async function handleAdd(){
-        let id = prompt("Enter new ID");
-        if(!id) return;
-        const numId = Number(id);
+        const numId = Number(modalInput);
+        if(!modalInput || isNaN(numId)){
+            setError("Please enter a valid number");
+            return;
+        }
         if(localAdded.has(numId) || localSelected.has(numId)){
             setError("ID already exists");
             return;
@@ -206,6 +221,8 @@ function App(){
         }
         else {
             setError("");
+            setModalInput("");
+            setShowModal(false);
             setQueueInfo(prev => ({...prev, add: prev.add + 1}));
             setTimeout(() => setQueueInfo(prev => ({...prev, add: Math.max(0, prev.add - 1)})), 10000);
         }
@@ -214,7 +231,7 @@ function App(){
     return <main>
             <h2>Million IDs Selector</h2>
             <div className="controls">
-                <button onClick={handleAdd}>Add New ID</button>
+                <button className="add-button" onClick={openModal}>Add New ID</button>
                 {queueInfo.add > 0 && <span className="queue-info">{queueInfo.add} add(s) queued (processing in ~10s)</span>}
                 {queueInfo.select > 0 && <span className="queue-info">{queueInfo.select} select(s) queued (processing in ~1s)</span>}
                 {queueInfo.remove > 0 && <span className="queue-info">{queueInfo.remove} remove(s) queued (processing in ~1s)</span>}
@@ -225,6 +242,28 @@ function App(){
                 <Box localSelected = {localSelected} onLocalSelect = {handleLocalSelect} onLocalDeselect = {handleLocalDeselect} localAdded = {localAdded} onReorder = {handleReorder}/>
                 <Box right localSelected = {localSelected} onLocalSelect = {handleLocalSelect} onLocalDeselect = {handleLocalDeselect} localAdded = {localAdded} onReorder = {handleReorder}/>
             </section>
+            {showModal && (
+                <div className="modal-overlay" onClick={closeModal}>
+                    <div className="modal" onClick={e => e.stopPropagation()}>
+                        <h3>Add New ID</h3>
+                        <input 
+                            type="text" 
+                            value={modalInput} 
+                            onChange={e => setModalInput(e.target.value)}
+                            placeholder="Enter ID number"
+                            autoFocus
+                            onKeyDown={e => {
+                                if(e.key === 'Enter') handleAdd();
+                                if(e.key === 'Escape') closeModal();
+                            }}
+                        />
+                        <div className="modal-buttons">
+                            <button className="cancel" onClick={closeModal}>Cancel</button>
+                            <button className="confirm" onClick={handleAdd}>Add ID</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </main>
 }
 createRoot(document.getElementById("root")).render(<App/>);

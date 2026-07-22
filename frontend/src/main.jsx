@@ -10,6 +10,15 @@ function Box({right, localSelected, onLocalSelect, onLocalDeselect, localAdded, 
     const [q, setQ] = useState("");
     const [fullList, setFullList] = useState([]);
     const [draggedItem, setDraggedItem] = useState(null);
+    const [baseIds, setBaseIds] = useState([]);
+
+    // Load base IDs once on mount for left panel
+    useEffect(() => {
+        if (!right) {
+            const generateBaseIds = () => Array.from({ length: 1000000 }, (_, i) => i + 1);
+            setBaseIds(generateBaseIds());
+        }
+    }, [right]);
 
     async function load(p = 0){
         if(right){
@@ -21,36 +30,17 @@ function Box({right, localSelected, onLocalSelect, onLocalDeselect, localAdded, 
                 setItems(prev=>[...prev,...filtered.slice(p*20, (p+1)*20)]);
             }
         } else {
-            const localExtra = [...Array.from(localAdded)].filter(x => !localSelected.has(x) && String(x).includes(q));
-            const localExtraUnique = [...new Set(localExtra)];
+            // Combine base IDs with manually added IDs
+            const allIds = [...baseIds, ...Array.from(localAdded)];
+            const uniqueIds = [...new Set(allIds)];
+            
+            // Filter out selected items and apply search filter
+            const available = uniqueIds.filter(x => !localSelected.has(x) && String(x).includes(q));
             
             if(p === 0){
-                let r = await fetch(`${API}/left?page=0&q=${encodeURIComponent(q)}`);
-                let d = await r.json();
-                const filtered = d.filter(x => !localSelected.has(x) && String(x).includes(q));
-                const combined = [...localExtraUnique, ...filtered];
-                const unique = [...new Set(combined)];
-                setItems(unique.slice(0, 20));
+                setItems(available.slice(0, 20));
             } else {
-                // Calculate how many items we've already loaded from localExtra
-                const localExtraOffset = Math.min(localExtraUnique.length, p * 20);
-                const remainingNeeded = 20;
-                
-                // Get items from localExtra first
-                const localExtraSlice = localExtraUnique.slice(localExtraOffset, localExtraOffset + remainingNeeded);
-                
-                // If we need more items, fetch from API
-                if(localExtraSlice.length < remainingNeeded){
-                    const apiPage = Math.max(0, p - Math.ceil(localExtraUnique.length / 20));
-                    let r = await fetch(`${API}/left?page=${apiPage}&q=${encodeURIComponent(q)}`);
-                    let d = await r.json();
-                    const filtered = d.filter(x => !localSelected.has(x) && String(x).includes(q));
-                    const combined = [...localExtraSlice, ...filtered];
-                    const unique = [...new Set(combined)];
-                    setItems(prev=>[...prev,...unique.slice(0, 20)]);
-                } else {
-                    setItems(prev=>[...prev,...localExtraSlice]);
-                }
+                setItems(prev=>[...prev,...available.slice(p*20, (p+1)*20)]);
             }
         }
     }
@@ -64,7 +54,7 @@ function Box({right, localSelected, onLocalSelect, onLocalDeselect, localAdded, 
         setPage(0);
         load(0);
         if(right)loadFullList();
-    },[q, right, localSelected, localAdded]);
+    },[q, right, localSelected, localAdded, baseIds]);
     
     const handleDragStart = (e, item) => {
         setDraggedItem(item);
@@ -180,8 +170,6 @@ function App(){
             });
         };
         loadState();
-        const interval = setInterval(loadState, 1000);
-        return () => clearInterval(interval);
     },[]);
 
     const openModal = () => {

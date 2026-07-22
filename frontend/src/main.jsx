@@ -4,7 +4,7 @@ import "./style.css";
 
 const API="http://localhost:3001";
 
-function Box({right, localSelected, onLocalSelect}){
+function Box({right, localSelected, onLocalSelect, localAdded}){
     const [items, setItems] = useState([]);
     const [page, setPage] = useState(0);
     const [q, setQ] = useState("");
@@ -19,7 +19,8 @@ function Box({right, localSelected, onLocalSelect}){
         } else {
             let r = await fetch(`${API}/left?page=${p}&q=${encodeURIComponent(q)}`);
             let d = await r.json();
-            let filtered = d.filter(x => !localSelected.has(x));
+            let withAdded = [...d, ...Array.from(localAdded)];
+            let filtered = withAdded.filter(x => !localSelected.has(x));
             setItems(p ? x=>[...x,...filtered]:filtered);
         }
     }
@@ -33,7 +34,7 @@ function Box({right, localSelected, onLocalSelect}){
         setPage(0);
         load(0);
         if(right)loadFullList();
-    },[q, right, localSelected]);
+    },[q, right, localSelected, localAdded]);
     
     const handleDragStart = (e, item) => {
         setDraggedItem(item);
@@ -94,6 +95,7 @@ function App(){
     const [stateKey,setStateKey]=useState(0);
     const [lastSelected,setLastSelected]=useState([]);
     const [localSelected,setLocalSelected]=useState(new Set());
+    const [localAdded,setLocalAdded]=useState(new Set());
     
     const handleLocalSelect = (id) => {
         setLocalSelected(prev => new Set([...prev, id]));
@@ -126,12 +128,36 @@ function App(){
     async function handleAdd(){
         let id = prompt("ID");
         if(!id) return;
+        const numId = Number(id);
+        if(localAdded.has(numId) || localSelected.has(numId)){
+            setError("ID already exists");
+            return;
+        }
+        setLocalAdded(prev => new Set([...prev, numId]));
+        setLocalSelected(prev => new Set([...prev, numId]));
+        fetch(API+"/select",{
+            method:"POST",
+            headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({id:numId})
+        });
         let r = await fetch(API+"/add",{
             method:"POST", 
             headers:{"Content-Type":"application/json"}, 
-            body:JSON.stringify({id})});
+            body:JSON.stringify({id:numId})});
         let d = await r.json();
-        if(!d.ok) setError(d.error || "Failed to add ID");
+        if(!d.ok) {
+            setError(d.error || "Failed to add ID");
+            setLocalAdded(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(numId);
+                return newSet;
+            });
+            setLocalSelected(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(numId);
+                return newSet;
+            });
+        }
         else setError("");
     }
     
@@ -140,8 +166,8 @@ function App(){
             <button onClick={handleAdd}>Add</button>
             {error && <div className="error">{error}</div>}
             <section key={stateKey}>
-                <Box localSelected={localSelected} onLocalSelect={handleLocalSelect}/>
-                <Box right localSelected={localSelected} onLocalSelect={handleLocalSelect}/>
+                <Box localSelected = {localSelected} onLocalSelect = {handleLocalSelect} localAdded = {localAdded}/>
+                <Box right localSelected = {localSelected} onLocalSelect = {handleLocalSelect} localAdded = {localAdded}/>
             </section>
         </main>
 }

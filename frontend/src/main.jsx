@@ -4,7 +4,7 @@ import "./style.css";
 
 const API="http://localhost:3001";
 
-function Box({right}){
+function Box({right, localSelected, onLocalSelect}){
     const [items, setItems] = useState([]);
     const [page, setPage] = useState(0);
     const [q, setQ] = useState("");
@@ -12,23 +12,28 @@ function Box({right}){
     const [draggedItem, setDraggedItem] = useState(null);
 
     async function load(p = 0){
-        let r = await fetch(`${API}/${right?"right":"left"}?page=${p}&q=${encodeURIComponent(q)}`);
-        let d = await r.json();
-        setItems(p ? x=>[...x,...d]:d);
+        if(right){
+            const localArray = Array.from(localSelected);
+            const filtered = localArray.filter(x => String(x).includes(q));
+            setItems(p ? x=>[...x,...filtered.slice(p*20, (p+1)*20)]:filtered.slice(0, 20));
+        } else {
+            let r = await fetch(`${API}/left?page=${p}&q=${encodeURIComponent(q)}`);
+            let d = await r.json();
+            let filtered = d.filter(x => !localSelected.has(x));
+            setItems(p ? x=>[...x,...filtered]:filtered);
+        }
     }
     
     async function loadFullList(){
         if(!right) return;
-        let r = await fetch(API+"/state");
-        let d = await r.json();
-        if(d.selected) setFullList(d.selected);
+        setFullList(Array.from(localSelected));
     }
 
     useEffect(()=>{
         setPage(0);
         load(0);
         if(right)loadFullList();
-    },[q, right]);
+    },[q, right, localSelected]);
     
     const handleDragStart = (e, item) => {
         setDraggedItem(item);
@@ -78,9 +83,7 @@ function Box({right}){
                     onDragStart={(e) => handleDragStart(e, x)}
                     onDragOver={handleDragOver}
                     onDrop={(e) => handleDrop(e, x)}
-                    onClick={()=>!right&&fetch(API+"/select",
-                        {method:"POST",
-                        headers:{"Content-Type":"application/json"},body:JSON.stringify({id:x})})} 
+                    onClick={()=>!right && onLocalSelect(x)}
                     key={x}>{x}</div>)
             }
             </div></div>
@@ -90,6 +93,16 @@ function App(){
     const [error,setError]=useState("");
     const [stateKey,setStateKey]=useState(0);
     const [lastSelected,setLastSelected]=useState([]);
+    const [localSelected,setLocalSelected]=useState(new Set());
+    
+    const handleLocalSelect = (id) => {
+        setLocalSelected(prev => new Set([...prev, id]));
+        fetch(API+"/select",{
+            method:"POST",
+            headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({id})
+        });
+    };
     
     useEffect(()=>{
         const loadState = () => {
@@ -99,6 +112,7 @@ function App(){
                     const lastStr = JSON.stringify(lastSelected);
                     if(currentStr !== lastStr){
                         setLastSelected(d.selected);
+                        setLocalSelected(new Set(d.selected));
                         setStateKey(prev=>prev+1);
                     }
                 }
@@ -110,18 +124,25 @@ function App(){
     },[lastSelected]);
 
     async function handleAdd(){
-  let id = prompt("ID");
-  if(!id) return;
-  let r = await fetch(API+"/add",{method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({id})});
-  let d = await r.json();
-  if(!d.ok) setError(d.error || "Failed to add ID");
-  else setError("");
- }
- return <main>
+        let id = prompt("ID");
+        if(!id) return;
+        let r = await fetch(API+"/add",{
+            method:"POST", 
+            headers:{"Content-Type":"application/json"}, 
+            body:JSON.stringify({id})});
+        let d = await r.json();
+        if(!d.ok) setError(d.error || "Failed to add ID");
+        else setError("");
+    }
+    
+    return <main>
             <h2>Million IDs selector</h2>
             <button onClick={handleAdd}>Add</button>
             {error && <div className="error">{error}</div>}
-            <section key={stateKey}><Box/><Box right/></section>
+            <section key={stateKey}>
+                <Box localSelected={localSelected} onLocalSelect={handleLocalSelect}/>
+                <Box right localSelected={localSelected} onLocalSelect={handleLocalSelect}/>
+            </section>
         </main>
 }
 createRoot(document.getElementById("root")).render(<App/>);

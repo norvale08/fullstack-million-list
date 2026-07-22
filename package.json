@@ -1,0 +1,12 @@
+{
+  "name": "fullstack-million-list",
+  "version": "1.0.0",
+  "description": "Fullstack ID selector with 1M base IDs",
+  "scripts": {
+    "build": "cd frontend && npm install && npm run build",
+    "start": "npm run build && cd backend && npm install && npm start"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import './style.css';
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+const API = import.meta.env.VITE_API_URL || '';
 const PAGE_SIZE = 20;
 
 function IdList({ isRight, selectedIds, onSelect, onDeselect, addedIds, onReorder, refreshTrigger }) {

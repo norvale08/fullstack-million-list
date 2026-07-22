@@ -249,6 +249,14 @@ app.post('/reorder', (req, res) => {
   res.json({ ok: true });
 });
 
+// Serve built frontend static files
+app.use(express.static(path.join(__dirname, '..', 'frontend', 'dist')));
+
+// Serve index.html for all non-API routes (client-side routing)
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'frontend', 'dist', 'index.html'));
+});
+
 // Only start server if this file is run directly (not imported for tests)
 if (require.main === module) {
   loadPersistedState().then(() => {

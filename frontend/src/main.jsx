@@ -8,13 +8,62 @@ function Box({right}){
     const [items, setItems] = useState([]);
     const [page, setPage] = useState(0);
     const [q, setQ] = useState("");
+    const [fullList, setFullList] = useState([]);
+    const [draggedItem, setDraggedItem] = useState(null);
 
     async function load(p = 0){
         let r = await fetch(`${API}/${right?"right":"left"}?page=${p}&q=${encodeURIComponent(q)}`);
         let d = await r.json();
         setItems(p ? x=>[...x,...d]:d);
     }
-    useEffect(()=>{setPage(0);load(0);},[q]);
+    
+    async function loadFullList(){
+        if(!right) return;
+        let r = await fetch(API+"/state");
+        let d = await r.json();
+        if(d.selected) setFullList(d.selected);
+    }
+
+    useEffect(()=>{
+        setPage(0);
+        load(0);
+        if(right)loadFullList();
+    },[q, right]);
+    
+    const handleDragStart = (e, item) => {
+        setDraggedItem(item);
+        e.dataTransfer.effectAllowed = "move";
+    };
+    
+    const handleDragOver = (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+    };
+    
+    const handleDrop = async (e, targetItem) => {
+        e.preventDefault();
+        if(!right || !draggedItem || draggedItem === targetItem) return;
+        
+        await loadFullList();
+        
+        const draggedIndex = fullList.indexOf(draggedItem);
+        const targetIndex = fullList.indexOf(targetItem);
+        
+        if(draggedIndex === -1 || targetIndex === -1) return;
+        
+        const newItems = [...fullList];
+        newItems.splice(draggedIndex, 1);
+        newItems.splice(targetIndex, 0, draggedItem);
+        
+        setFullList(newItems);
+        fetch(API+"/reorder",{
+            method:"POST",
+            headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({items:newItems})
+        });
+        setDraggedItem(null);
+    };
+
     return <div className="box">
                 <input placeholder="filter ID" value = {q} onChange = {e => setQ(e.target.value)}/>
                 <div className="list" 
@@ -24,19 +73,36 @@ function Box({right}){
                         }
                     }}>
             {
-                items.map( x => <div draggable={right} 
-                    onDragEnd={() => right&&fetch(API+"/reorder",
-                        {method:"POST",
-                        headers:{"Content-Type":"application/json"},
-                        body:JSON.stringify({items:[...items.filter(y=>y!==x),x]})})} 
+                items.map( x => <div 
+                    draggable={right}
+                    onDragStart={(e) => handleDragStart(e, x)}
+                    onDragOver={handleDragOver}
+                    onDrop={(e) => handleDrop(e, x)}
                     onClick={()=>!right&&fetch(API+"/select",
                         {method:"POST",
-                        headers:{"Content-Type":"application/json"},body:JSON.stringify({id:x})})} key={x}>{x}</div>)
+                        headers:{"Content-Type":"application/json"},body:JSON.stringify({id:x})})} 
+                    key={x}>{x}</div>)
             }
             </div></div>
-            }
+    }
+    
 function App(){
     const [error,setError]=useState("");
+    const [stateKey,setStateKey]=useState(0);
+    
+    useEffect(()=>{
+        const loadState = () => {
+            fetch(API+"/state").then(r=>r.json()).then(d=>{
+                if(d.selected){
+                    setStateKey(prev=>prev+1);
+                }
+            });
+        };
+        loadState();
+        const interval = setInterval(loadState, 1500);
+        return () => clearInterval(interval);
+    },[]);
+
     async function handleAdd(){
   let id = prompt("ID");
   if(!id) return;
@@ -49,7 +115,7 @@ function App(){
             <h2>Million IDs selector</h2>
             <button onClick={handleAdd}>Add</button>
             {error && <div className="error">{error}</div>}
-            <section><Box/><Box right/></section>
+            <section key={stateKey}><Box/><Box right/></section>
         </main>
 }
 createRoot(document.getElementById("root")).render(<App/>);

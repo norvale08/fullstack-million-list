@@ -8,21 +8,16 @@ services:
     envVars:
       - key: PORT
         value: 3001
-      - key: FRONTEND_URL
-        fromService:
-          type: web
-          name: million-list-frontend
-          property: url
 
   # Frontend Service
   - type: web
     name: million-list-frontend
     env: static
-    buildCommand: cd frontend && npm install && npm run build
+    buildCommand: cd frontend && npm install && VITE_API_URL=https://$BACKEND_HOST npm run build
     staticPublishPath: frontend/dist
     envVars:
-      - key: VITE_API_URL
+      - key: BACKEND_HOST
         fromService:
           type: web
           name: million-list-backend
-          property: url
+          property: host

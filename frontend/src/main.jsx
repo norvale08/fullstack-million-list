@@ -1,4 +1,4 @@
-import React,{useEffect,useState} from "react";
+import React,{useEffect,useState,useRef} from "react";
 import {createRoot} from "react-dom/client";
 import "./style.css";
 
@@ -17,12 +17,21 @@ function Box({right, localSelected, onLocalSelect, onLocalDeselect, localAdded, 
             const filtered = localArray.filter(x => String(x).includes(q));
             setItems(p ? x=>[...x,...filtered.slice(p*20, (p+1)*20)]:filtered.slice(0, 20));
         } else {
-            let r = await fetch(`${API}/left?page=${p}&q=${encodeURIComponent(q)}`);
-            let d = await r.json();
-            let withAdded = [...Array.from(localDeselected), ...Array.from(localAdded), ...d];
-            let unique = [...new Set(withAdded)];
-            let filtered = unique.filter(x => !localSelected.has(x) && String(x).includes(q));
-            setItems(p ? x=>[...x,...filtered.slice(p*20, (p+1)*20)]:filtered.slice(0, 20));
+            const localExtra = [...Array.from(localDeselected), ...Array.from(localAdded)].filter(x => !localSelected.has(x) && String(x).includes(q));
+            const localExtraUnique = [...new Set(localExtra)];
+            
+            if(p === 0){
+                let r = await fetch(`${API}/left?page=0&q=${encodeURIComponent(q)}`);
+                let d = await r.json();
+                const combined = [...localExtraUnique, ...d];
+                const unique = [...new Set(combined)];
+                setItems(unique.slice(0, 20));
+            } else {
+                const offset = Math.max(0, p - Math.ceil(localExtraUnique.length / 20));
+                let r = await fetch(`${API}/left?page=${offset}&q=${encodeURIComponent(q)}`);
+                let d = await r.json();
+                setItems(prev=>[...prev,...d]);
+            }
         }
     }
     
@@ -156,12 +165,6 @@ function App(){
             return;
         }
         setLocalAdded(prev => new Set([...prev, numId]));
-        setLocalSelected(prev => new Set([...prev, numId]));
-        fetch(API+"/select",{
-            method:"POST",
-            headers:{"Content-Type":"application/json"},
-            body:JSON.stringify({id:numId})
-        });
         let r = await fetch(API+"/add",{
             method:"POST", 
             headers:{"Content-Type":"application/json"}, 
@@ -170,11 +173,6 @@ function App(){
         if(!d.ok) {
             setError(d.error || "Failed to add ID");
             setLocalAdded(prev => {
-                const newSet = new Set(prev);
-                newSet.delete(numId);
-                return newSet;
-            });
-            setLocalSelected(prev => {
                 const newSet = new Set(prev);
                 newSet.delete(numId);
                 return newSet;

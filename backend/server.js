@@ -6,7 +6,7 @@ app.use(cors()); app.use(express.json());
 let selected = [];
 let maxId = 1000000;
 let manuallyAdded = new Set();
-let queue = {add:new Set(),update:false};
+let queue = {add:new Set(),remove:new Set(),update:false};
 
 function available(){
     const s = new Set(selected);
@@ -39,6 +39,12 @@ app.post("/reorder",(req,res)=>{
     res.json({ok:true});
 });
 
+app.post("/deselect",(req,res)=>{
+    const id = Number(req.body.id);
+    if(id && selected.includes(id)) queue.remove.add(id);
+    res.json({ok:true});
+});
+
 app.post("/add",(req,res)=>{
     const id=Number(req.body.id);
     if(id && !manuallyAdded.has(id) && !selected.includes(id)){
@@ -56,6 +62,11 @@ setInterval(()=>{
 },10000);
 
 setInterval(()=>{
+    for(const id of queue.remove) {
+        const idx = selected.indexOf(id);
+        if(idx !== -1) selected.splice(idx, 1);
+    }
+    queue.remove.clear();
     if(queue.update){ selected = queue.update; queue.update=false; }
 },1000);
 

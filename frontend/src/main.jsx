@@ -4,7 +4,7 @@ import "./style.css";
 
 const API="http://localhost:3001";
 
-function Box({right, localSelected, onLocalSelect, localAdded}){
+function Box({right, localSelected, onLocalSelect, onLocalDeselect, localAdded, localDeselected}){
     const [items, setItems] = useState([]);
     const [page, setPage] = useState(0);
     const [q, setQ] = useState("");
@@ -19,9 +19,10 @@ function Box({right, localSelected, onLocalSelect, localAdded}){
         } else {
             let r = await fetch(`${API}/left?page=${p}&q=${encodeURIComponent(q)}`);
             let d = await r.json();
-            let withAdded = [...d, ...Array.from(localAdded)];
-            let filtered = withAdded.filter(x => !localSelected.has(x));
-            setItems(p ? x=>[...x,...filtered]:filtered);
+            let withAdded = [...Array.from(localDeselected), ...Array.from(localAdded), ...d];
+            let unique = [...new Set(withAdded)];
+            let filtered = unique.filter(x => !localSelected.has(x) && String(x).includes(q));
+            setItems(p ? x=>[...x,...filtered.slice(p*20, (p+1)*20)]:filtered.slice(0, 20));
         }
     }
     
@@ -34,7 +35,7 @@ function Box({right, localSelected, onLocalSelect, localAdded}){
         setPage(0);
         load(0);
         if(right)loadFullList();
-    },[q, right, localSelected, localAdded]);
+    },[q, right, localSelected, localAdded, localDeselected]);
     
     const handleDragStart = (e, item) => {
         setDraggedItem(item);
@@ -84,7 +85,7 @@ function Box({right, localSelected, onLocalSelect, localAdded}){
                     onDragStart={(e) => handleDragStart(e, x)}
                     onDragOver={handleDragOver}
                     onDrop={(e) => handleDrop(e, x)}
-                    onClick={()=>!right && onLocalSelect(x)}
+                    onClick={()=>!right ? onLocalSelect(x) : onLocalDeselect(x)}
                     key={x}>{x}</div>)
             }
             </div></div>
@@ -96,10 +97,30 @@ function App(){
     const [lastSelected,setLastSelected]=useState([]);
     const [localSelected,setLocalSelected]=useState(new Set());
     const [localAdded,setLocalAdded]=useState(new Set());
+    const [localDeselected,setLocalDeselected]=useState(new Set());
     
     const handleLocalSelect = (id) => {
         setLocalSelected(prev => new Set([...prev, id]));
+        setLocalDeselected(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(id);
+            return newSet;
+        });
         fetch(API+"/select",{
+            method:"POST",
+            headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({id})
+        });
+    };
+    
+    const handleLocalDeselect = (id) => {
+        setLocalSelected(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(id);
+            return newSet;
+        });
+        setLocalDeselected(prev => new Set([...prev, id]));
+        fetch(API+"/deselect",{
             method:"POST",
             headers:{"Content-Type":"application/json"},
             body:JSON.stringify({id})
@@ -115,6 +136,7 @@ function App(){
                     if(currentStr !== lastStr){
                         setLastSelected(d.selected);
                         setLocalSelected(new Set(d.selected));
+                        setLocalDeselected(new Set());
                         setStateKey(prev=>prev+1);
                     }
                 }
@@ -166,8 +188,8 @@ function App(){
             <button onClick={handleAdd}>Add</button>
             {error && <div className="error">{error}</div>}
             <section key={stateKey}>
-                <Box localSelected = {localSelected} onLocalSelect = {handleLocalSelect} localAdded = {localAdded}/>
-                <Box right localSelected = {localSelected} onLocalSelect = {handleLocalSelect} localAdded = {localAdded}/>
+                <Box localSelected = {localSelected} onLocalSelect = {handleLocalSelect} onLocalDeselect = {handleLocalDeselect} localAdded = {localAdded} localDeselected = {localDeselected}/>
+                <Box right localSelected = {localSelected} onLocalSelect = {handleLocalSelect} onLocalDeselect = {handleLocalDeselect} localAdded = {localAdded} localDeselected = {localDeselected}/>
             </section>
         </main>
 }

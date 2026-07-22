@@ -89,19 +89,25 @@ function Box({right}){
 function App(){
     const [error,setError]=useState("");
     const [stateKey,setStateKey]=useState(0);
+    const [lastSelected,setLastSelected]=useState([]);
     
     useEffect(()=>{
         const loadState = () => {
             fetch(API+"/state").then(r=>r.json()).then(d=>{
                 if(d.selected){
-                    setStateKey(prev=>prev+1);
+                    const currentStr = JSON.stringify(d.selected);
+                    const lastStr = JSON.stringify(lastSelected);
+                    if(currentStr !== lastStr){
+                        setLastSelected(d.selected);
+                        setStateKey(prev=>prev+1);
+                    }
                 }
             });
         };
         loadState();
         const interval = setInterval(loadState, 1500);
         return () => clearInterval(interval);
-    },[]);
+    },[lastSelected]);
 
     async function handleAdd(){
   let id = prompt("ID");

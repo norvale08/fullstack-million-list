@@ -1,0 +1,28 @@
+services:
+  # Backend Service
+  - type: web
+    name: million-list-backend
+    env: node
+    buildCommand: cd backend && npm install
+    startCommand: cd backend && npm start
+    envVars:
+      - key: PORT
+        value: 3001
+      - key: FRONTEND_URL
+        fromService:
+          type: web
+          name: million-list-frontend
+          property: url
+
+  # Frontend Service
+  - type: web
+    name: million-list-frontend
+    env: static
+    buildCommand: cd frontend && npm install && npm run build
+    staticPublishPath: frontend/dist
+    envVars:
+      - key: VITE_API_URL
+        fromService:
+          type: web
+          name: million-list-backend
+          property: url

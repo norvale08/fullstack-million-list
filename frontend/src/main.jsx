@@ -1,257 +1,241 @@
-import React,{useEffect,useState,useRef} from "react";
-import {createRoot} from "react-dom/client";
-import "./style.css";
+import React, { useState, useEffect } from 'react';
+import { createRoot } from 'react-dom/client';
+import './style.css';
 
-const API="http://localhost:3001";
+const API = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+const PAGE_SIZE = 20;
 
-function Box({right, localSelected, onLocalSelect, onLocalDeselect, localAdded, onReorder}){
-    const [items, setItems] = useState([]);
-    const [page, setPage] = useState(0);
-    const [q, setQ] = useState("");
-    const [fullList, setFullList] = useState([]);
-    const [draggedItem, setDraggedItem] = useState(null);
-    const [baseIds, setBaseIds] = useState([]);
+function IdList({ isRight, selectedIds, onSelect, onDeselect, addedIds, onReorder, refreshTrigger }) {
+  const [items, setItems] = useState([]);
+  const [page, setPage] = useState(0);
+  const [filter, setFilter] = useState('');
+  const [draggedId, setDraggedId] = useState(null);
 
-    // Load base IDs once on mount for left panel
-    useEffect(() => {
-        if (!right) {
-            const generateBaseIds = () => Array.from({ length: 1000000 }, (_, i) => i + 1);
-            setBaseIds(generateBaseIds());
-        }
-    }, [right]);
-
-    async function load(p = 0){
-        if(right){
-            const localArray = Array.from(localSelected);
-            const filtered = localArray.filter(x => String(x).includes(q));
-            if(p === 0){
-                setItems(filtered.slice(0, 20));
-            } else {
-                setItems(prev=>[...prev,...filtered.slice(p*20, (p+1)*20)]);
-            }
-        } else {
-            // Combine base IDs with manually added IDs
-            const allIds = [...baseIds, ...Array.from(localAdded)];
-            const uniqueIds = [...new Set(allIds)];
-            
-            // Filter out selected items and apply search filter
-            const available = uniqueIds.filter(x => !localSelected.has(x) && String(x).includes(q));
-            
-            if(p === 0){
-                setItems(available.slice(0, 20));
-            } else {
-                setItems(prev=>[...prev,...available.slice(p*20, (p+1)*20)]);
-            }
-        }
+  const loadItems = async (pageNum = 0) => {
+    if (isRight) {
+      const filtered = selectedIds.filter(id => String(id).includes(filter));
+      if (pageNum === 0) {
+        setItems(filtered.slice(0, PAGE_SIZE));
+      } else {
+        setItems(prev => [...prev, ...filtered.slice(pageNum * PAGE_SIZE, (pageNum + 1) * PAGE_SIZE)]);
+      }
+    } else {
+      const url = `${API}/left?q=${encodeURIComponent(filter)}&page=${pageNum}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      
+      if (pageNum === 0) {
+        setItems(data);
+      } else {
+        setItems(prev => [...prev, ...data]);
+      }
     }
-    
-    async function loadFullList(){
-        if(!right) return;
-        setFullList(Array.from(localSelected));
+  };
+
+  useEffect(() => {
+    setPage(0);
+    loadItems(0);
+  }, [filter, selectedIds, addedIds, isRight, refreshTrigger]);
+
+  const handleScroll = (e) => {
+    const { scrollTop, clientHeight, scrollHeight } = e.target;
+    if (scrollTop + clientHeight >= scrollHeight - 50) {
+      const nextPage = page + 1;
+      setPage(nextPage);
+      loadItems(nextPage);
     }
+  };
 
-    useEffect(()=>{
-        setPage(0);
-        load(0);
-        if(right)loadFullList();
-    },[q, right, localSelected, localAdded, baseIds]);
-    
-    const handleDragStart = (e, item) => {
-        setDraggedItem(item);
-        e.dataTransfer.effectAllowed = "move";
-    };
-    
-    const handleDragOver = (e) => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = "move";
-    };
-    
-    const handleDrop = async (e, targetItem) => {
-        e.preventDefault();
-        if(!right || !draggedItem || draggedItem === targetItem) return;
-        
-        await loadFullList();
-        
-        // Get the current filtered list
-        const filtered = fullList.filter(x => String(x).includes(q));
-        const draggedIndex = filtered.indexOf(draggedItem);
-        const targetIndex = filtered.indexOf(targetItem);
-        
-        if(draggedIndex === -1 || targetIndex === -1) return;
-        
-        // Reorder the filtered list
-        const newFiltered = [...filtered];
-        newFiltered.splice(draggedIndex, 1);
-        newFiltered.splice(targetIndex, 0, draggedItem);
-        
-        // Map back to full list: keep items not in filter in their original order,
-        // insert filtered items in their new order
-        const notInFilter = fullList.filter(x => !String(x).includes(q));
-        const newItems = [...notInFilter, ...newFiltered];
-        
-        setFullList(newItems);
-        fetch(API+"/reorder",{
-            method:"POST",
-            headers:{"Content-Type":"application/json"},
-            body:JSON.stringify({items:newItems})
-        });
-        if(onReorder) onReorder();
-        setDraggedItem(null);
-    };
+  const handleDragStart = (e, id) => {
+    setDraggedId(id);
+    e.dataTransfer.effectAllowed = 'move';
+  };
 
-    return <div className="box">
-                <input placeholder="filter ID" value = {q} onChange = {e => setQ(e.target.value)}/>
-                <div className="list" 
-                    onScroll = { e=> {
-                        if(e.target.scrollTop + e.target.clientHeight >= e.target.scrollHeight - 10) {
-                            let p = page + 1; setPage(p); load(p);
-                        }
-                    }}>
-            {
-                items.map( x => <div 
-                    draggable={right}
-                    onDragStart={(e) => handleDragStart(e, x)}
-                    onDragOver={handleDragOver}
-                    onDrop={(e) => handleDrop(e, x)}
-                    onClick={()=>!right ? onLocalSelect(x) : onLocalDeselect(x)}
-                    key={x}>{x}</div>)
-            }
-            </div></div>
-    }
-    
-function App(){
-    const [error,setError]=useState("");
-    const [stateKey,setStateKey]=useState(0);
-    const [lastSelected,setLastSelected]=useState([]);
-    const [localSelected,setLocalSelected]=useState(new Set());
-    const [localAdded,setLocalAdded]=useState(new Set());
-    const [queueInfo,setQueueInfo]=useState({add:0,remove:0,reorder:0,select:0});
-    const [showModal,setShowModal]=useState(false);
-    const [modalInput,setModalInput]=useState("");
-    
-    const handleLocalSelect = (id) => {
-        setLocalSelected(prev => new Set([...prev, id]));
-        fetch(API+"/select",{
-            method:"POST",
-            headers:{"Content-Type":"application/json"},
-            body:JSON.stringify({id})
-        });
-        setQueueInfo(prev => ({...prev, select: prev.select + 1}));
-        setTimeout(() => setQueueInfo(prev => ({...prev, select: Math.max(0, prev.select - 1)})), 1000);
-    };
-    
-    const handleLocalDeselect = (id) => {
-        setLocalSelected(prev => {
-            const newSet = new Set(prev);
-            newSet.delete(id);
-            return newSet;
-        });
-        fetch(API+"/deselect",{
-            method:"POST",
-            headers:{"Content-Type":"application/json"},
-            body:JSON.stringify({id})
-        });
-        setQueueInfo(prev => ({...prev, remove: prev.remove + 1}));
-        setTimeout(() => setQueueInfo(prev => ({...prev, remove: Math.max(0, prev.remove - 1)})), 1000);
-    };
+  const handleDragOver = (e) => {
+    e.preventDefault();
+  };
 
-    const handleReorder = () => {
-        setQueueInfo(prev => ({...prev, reorder: prev.reorder + 1}));
-        setTimeout(() => setQueueInfo(prev => ({...prev, reorder: Math.max(0, prev.reorder - 1)})), 1000);
-    };
+  const handleDrop = async (e, targetId) => {
+    e.preventDefault();
+    if (!isRight || !draggedId || draggedId === targetId) return;
+
+    const draggedIndex = selectedIds.indexOf(draggedId);
+    const targetIndex = selectedIds.indexOf(targetId);
     
-    useEffect(()=>{
-        const loadState = () => {
-            fetch(API+"/state").then(r=>r.json()).then(d=>{
-                if(d.selected){
-                    setLastSelected(d.selected);
-                    setLocalSelected(new Set(d.selected));
-                }
-            });
-        };
-        loadState();
-    },[]);
+    if (draggedIndex === -1 || targetIndex === -1) return;
 
-    const openModal = () => {
-        setShowModal(true);
-        setModalInput("");
-        setError("");
-    };
+    const newOrder = [...selectedIds];
+    newOrder.splice(draggedIndex, 1);
+    newOrder.splice(targetIndex, 0, draggedId);
 
-    const closeModal = () => {
-        setShowModal(false);
-        setModalInput("");
-    };
+    await fetch(`${API}/reorder`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items: newOrder })
+    });
 
-    async function handleAdd(){
-        const numId = Number(modalInput);
-        if(!modalInput || isNaN(numId)){
-            setError("Please enter a valid number");
-            return;
-        }
-        if(localAdded.has(numId) || localSelected.has(numId)){
-            setError("ID already exists");
-            return;
-        }
-        setLocalAdded(prev => new Set([...prev, numId]));
-        let r = await fetch(API+"/add",{
-            method:"POST", 
-            headers:{"Content-Type":"application/json"}, 
-            body:JSON.stringify({id:numId})});
-        let d = await r.json();
-        if(!d.ok) {
-            setError(d.error || "Failed to add ID");
-            setLocalAdded(prev => {
-                const newSet = new Set(prev);
-                newSet.delete(numId);
-                return newSet;
-            });
-        }
-        else {
-            setError("");
-            setModalInput("");
-            setShowModal(false);
-            setQueueInfo(prev => ({...prev, add: prev.add + 1}));
-            setTimeout(() => setQueueInfo(prev => ({...prev, add: Math.max(0, prev.add - 1)})), 10000);
-        }
-    }
-    
-    return <main>
-            <h2>Million IDs Selector</h2>
-            <div className="controls">
-                <button className="add-button" onClick={openModal}>Add New ID</button>
-                {queueInfo.add > 0 && <span className="queue-info">{queueInfo.add} add(s) queued (processing in ~10s)</span>}
-                {queueInfo.select > 0 && <span className="queue-info">{queueInfo.select} select(s) queued (processing in ~1s)</span>}
-                {queueInfo.remove > 0 && <span className="queue-info">{queueInfo.remove} remove(s) queued (processing in ~1s)</span>}
-                {queueInfo.reorder > 0 && <span className="queue-info">{queueInfo.reorder} reorder(s) queued (processing in ~1s)</span>}
-            </div>
-            {error && <div className="error">{error}</div>}
-            <section key={stateKey}>
-                <Box localSelected = {localSelected} onLocalSelect = {handleLocalSelect} onLocalDeselect = {handleLocalDeselect} localAdded = {localAdded} onReorder = {handleReorder}/>
-                <Box right localSelected = {localSelected} onLocalSelect = {handleLocalSelect} onLocalDeselect = {handleLocalDeselect} localAdded = {localAdded} onReorder = {handleReorder}/>
-            </section>
-            {showModal && (
-                <div className="modal-overlay" onClick={closeModal}>
-                    <div className="modal" onClick={e => e.stopPropagation()}>
-                        <h3>Add New ID</h3>
-                        <input 
-                            type="text" 
-                            value={modalInput} 
-                            onChange={e => setModalInput(e.target.value)}
-                            placeholder="Enter ID number"
-                            autoFocus
-                            onKeyDown={e => {
-                                if(e.key === 'Enter') handleAdd();
-                                if(e.key === 'Escape') closeModal();
-                            }}
-                        />
-                        <div className="modal-buttons">
-                            <button className="cancel" onClick={closeModal}>Cancel</button>
-                            <button className="confirm" onClick={handleAdd}>Add ID</button>
-                        </div>
-                    </div>
-                </div>
-            )}
-        </main>
+    if (onReorder) onReorder();
+    setDraggedId(null);
+  };
+
+  return (
+    <div className="panel">
+      <input
+        type="text"
+        placeholder="Filter IDs..."
+        value={filter}
+        onChange={e => setFilter(e.target.value)}
+        className="filter-input"
+      />
+      <div className="list" onScroll={handleScroll}>
+        {items.map(id => (
+          <div
+            key={id}
+            draggable={isRight}
+            onDragStart={e => handleDragStart(e, id)}
+            onDragOver={handleDragOver}
+            onDrop={e => handleDrop(e, id)}
+            onClick={() => isRight ? onDeselect(id) : onSelect(id)}
+            className={`list-item ${isRight ? 'draggable' : ''}`}
+          >
+            {id}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
-createRoot(document.getElementById("root")).render(<App/>);
+
+function App() {
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [addedIds, setAddedIds] = useState(new Set());
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newIdInput, setNewIdInput] = useState('');
+  const [error, setError] = useState('');
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  useEffect(() => {
+    fetch(`${API}/state`)
+      .then(r => r.json())
+      .then(data => setSelectedIds(data.selected || []))
+      .catch(err => console.error('Failed to load state:', err));
+  }, []);
+
+  const handleSelect = async (id) => {
+    if (selectedIds.includes(id)) return;
+
+    const res = await fetch(`${API}/select`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id })
+    });
+
+    if (res.ok) {
+      setSelectedIds(prev => [...prev, id]);
+      setRefreshTrigger(prev => prev + 1);
+    }
+  };
+
+  const handleDeselect = async (id) => {
+    const res = await fetch(`${API}/deselect`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id })
+    });
+
+    if (res.ok) {
+      setSelectedIds(prev => prev.filter(x => x !== id));
+      setRefreshTrigger(prev => prev + 1);
+    }
+  };
+
+  const handleAddId = async () => {
+    const id = Number(newIdInput);
+    if (!id || isNaN(id)) {
+      setError('Please enter a valid number');
+      return;
+    }
+    if (selectedIds.includes(id) || addedIds.has(id)) {
+      setError('ID already exists');
+      return;
+    }
+
+    const res = await fetch(`${API}/add`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id })
+    });
+
+    const data = await res.json();
+    if (data.ok) {
+      setAddedIds(prev => new Set([...prev, id]));
+      setNewIdInput('');
+      setShowAddModal(false);
+      setError('');
+    } else {
+      setError(data.error || 'Failed to add ID');
+    }
+  };
+
+  const refreshState = () => {
+    fetch(`${API}/state`)
+      .then(r => r.json())
+      .then(data => setSelectedIds(data.selected || []));
+  };
+
+  return (
+    <main>
+      <h1>ID Selector</h1>
+      <div className="toolbar">
+        <button onClick={() => setShowAddModal(true)}>Add Custom ID</button>
+      </div>
+      
+      {error && <div className="error">{error}</div>}
+
+      <div className="panels">
+        <IdList
+          isRight={false}
+          selectedIds={selectedIds}
+          onSelect={handleSelect}
+          onDeselect={handleDeselect}
+          addedIds={addedIds}
+          refreshTrigger={refreshTrigger}
+        />
+        <IdList
+          isRight={true}
+          selectedIds={selectedIds}
+          onSelect={handleSelect}
+          onDeselect={handleDeselect}
+          addedIds={addedIds}
+          onReorder={refreshState}
+          refreshTrigger={refreshTrigger}
+        />
+      </div>
+
+      {showAddModal && (
+        <div className="modal" onClick={() => setShowAddModal(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <h2>Add Custom ID</h2>
+            <input
+              type="text"
+              value={newIdInput}
+              onChange={e => setNewIdInput(e.target.value)}
+              placeholder="Enter ID number"
+              onKeyDown={e => {
+                if (e.key === 'Enter') handleAddId();
+                if (e.key === 'Escape') setShowAddModal(false);
+              }}
+              autoFocus
+            />
+            <div className="modal-actions">
+              <button onClick={() => setShowAddModal(false)}>Cancel</button>
+              <button onClick={handleAddId}>Add</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </main>
+  );
+}
+
+createRoot(document.getElementById('root')).render(<App />);

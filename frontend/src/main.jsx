@@ -4,7 +4,7 @@ import "./style.css";
 
 const API="http://localhost:3001";
 
-function Box({right, localSelected, onLocalSelect, onLocalDeselect, localAdded}){
+function Box({right, localSelected, onLocalSelect, onLocalDeselect, localAdded, onReorder}){
     const [items, setItems] = useState([]);
     const [page, setPage] = useState(0);
     const [q, setQ] = useState("");
@@ -32,11 +32,25 @@ function Box({right, localSelected, onLocalSelect, onLocalDeselect, localAdded})
                 const unique = [...new Set(combined)];
                 setItems(unique.slice(0, 20));
             } else {
-                const offset = Math.max(0, p - Math.ceil(localExtraUnique.length / 20));
-                let r = await fetch(`${API}/left?page=${offset}&q=${encodeURIComponent(q)}`);
-                let d = await r.json();
-                const filtered = d.filter(x => !localSelected.has(x) && String(x).includes(q));
-                setItems(prev=>[...prev,...filtered]);
+                // Calculate how many items we've already loaded from localExtra
+                const localExtraOffset = Math.min(localExtraUnique.length, p * 20);
+                const remainingNeeded = 20;
+                
+                // Get items from localExtra first
+                const localExtraSlice = localExtraUnique.slice(localExtraOffset, localExtraOffset + remainingNeeded);
+                
+                // If we need more items, fetch from API
+                if(localExtraSlice.length < remainingNeeded){
+                    const apiPage = Math.max(0, p - Math.ceil(localExtraUnique.length / 20));
+                    let r = await fetch(`${API}/left?page=${apiPage}&q=${encodeURIComponent(q)}`);
+                    let d = await r.json();
+                    const filtered = d.filter(x => !localSelected.has(x) && String(x).includes(q));
+                    const combined = [...localExtraSlice, ...filtered];
+                    const unique = [...new Set(combined)];
+                    setItems(prev=>[...prev,...unique.slice(0, 20)]);
+                } else {
+                    setItems(prev=>[...prev,...localExtraSlice]);
+                }
             }
         }
     }
@@ -68,14 +82,22 @@ function Box({right, localSelected, onLocalSelect, onLocalDeselect, localAdded})
         
         await loadFullList();
         
-        const draggedIndex = fullList.indexOf(draggedItem);
-        const targetIndex = fullList.indexOf(targetItem);
+        // Get the current filtered list
+        const filtered = fullList.filter(x => String(x).includes(q));
+        const draggedIndex = filtered.indexOf(draggedItem);
+        const targetIndex = filtered.indexOf(targetItem);
         
         if(draggedIndex === -1 || targetIndex === -1) return;
         
-        const newItems = [...fullList];
-        newItems.splice(draggedIndex, 1);
-        newItems.splice(targetIndex, 0, draggedItem);
+        // Reorder the filtered list
+        const newFiltered = [...filtered];
+        newFiltered.splice(draggedIndex, 1);
+        newFiltered.splice(targetIndex, 0, draggedItem);
+        
+        // Map back to full list: keep items not in filter in their original order,
+        // insert filtered items in their new order
+        const notInFilter = fullList.filter(x => !String(x).includes(q));
+        const newItems = [...notInFilter, ...newFiltered];
         
         setFullList(newItems);
         fetch(API+"/reorder",{
@@ -83,6 +105,7 @@ function Box({right, localSelected, onLocalSelect, onLocalDeselect, localAdded})
             headers:{"Content-Type":"application/json"},
             body:JSON.stringify({items:newItems})
         });
+        if(onReorder) onReorder();
         setDraggedItem(null);
     };
 
@@ -112,6 +135,7 @@ function App(){
     const [lastSelected,setLastSelected]=useState([]);
     const [localSelected,setLocalSelected]=useState(new Set());
     const [localAdded,setLocalAdded]=useState(new Set());
+    const [queueInfo,setQueueInfo]=useState({add:0,remove:0,reorder:0,select:0});
     
     const handleLocalSelect = (id) => {
         setLocalSelected(prev => new Set([...prev, id]));
@@ -120,6 +144,8 @@ function App(){
             headers:{"Content-Type":"application/json"},
             body:JSON.stringify({id})
         });
+        setQueueInfo(prev => ({...prev, select: prev.select + 1}));
+        setTimeout(() => setQueueInfo(prev => ({...prev, select: Math.max(0, prev.select - 1)})), 1000);
     };
     
     const handleLocalDeselect = (id) => {
@@ -133,6 +159,13 @@ function App(){
             headers:{"Content-Type":"application/json"},
             body:JSON.stringify({id})
         });
+        setQueueInfo(prev => ({...prev, remove: prev.remove + 1}));
+        setTimeout(() => setQueueInfo(prev => ({...prev, remove: Math.max(0, prev.remove - 1)})), 1000);
+    };
+
+    const handleReorder = () => {
+        setQueueInfo(prev => ({...prev, reorder: prev.reorder + 1}));
+        setTimeout(() => setQueueInfo(prev => ({...prev, reorder: Math.max(0, prev.reorder - 1)})), 1000);
     };
     
     useEffect(()=>{
@@ -150,7 +183,7 @@ function App(){
     },[]);
 
     async function handleAdd(){
-        let id = prompt("ID");
+        let id = prompt("Enter new ID");
         if(!id) return;
         const numId = Number(id);
         if(localAdded.has(numId) || localSelected.has(numId)){
@@ -171,16 +204,26 @@ function App(){
                 return newSet;
             });
         }
-        else setError("");
+        else {
+            setError("");
+            setQueueInfo(prev => ({...prev, add: prev.add + 1}));
+            setTimeout(() => setQueueInfo(prev => ({...prev, add: Math.max(0, prev.add - 1)})), 10000);
+        }
     }
     
     return <main>
-            <h2>Million IDs selector</h2>
-            <button onClick={handleAdd}>Add</button>
+            <h2>Million IDs Selector</h2>
+            <div className="controls">
+                <button onClick={handleAdd}>Add New ID</button>
+                {queueInfo.add > 0 && <span className="queue-info">{queueInfo.add} add(s) queued (processing in ~10s)</span>}
+                {queueInfo.select > 0 && <span className="queue-info">{queueInfo.select} select(s) queued (processing in ~1s)</span>}
+                {queueInfo.remove > 0 && <span className="queue-info">{queueInfo.remove} remove(s) queued (processing in ~1s)</span>}
+                {queueInfo.reorder > 0 && <span className="queue-info">{queueInfo.reorder} reorder(s) queued (processing in ~1s)</span>}
+            </div>
             {error && <div className="error">{error}</div>}
             <section key={stateKey}>
-                <Box localSelected = {localSelected} onLocalSelect = {handleLocalSelect} onLocalDeselect = {handleLocalDeselect} localAdded = {localAdded}/>
-                <Box right localSelected = {localSelected} onLocalSelect = {handleLocalSelect} onLocalDeselect = {handleLocalDeselect} localAdded = {localAdded}/>
+                <Box localSelected = {localSelected} onLocalSelect = {handleLocalSelect} onLocalDeselect = {handleLocalDeselect} localAdded = {localAdded} onReorder = {handleReorder}/>
+                <Box right localSelected = {localSelected} onLocalSelect = {handleLocalSelect} onLocalDeselect = {handleLocalDeselect} localAdded = {localAdded} onReorder = {handleReorder}/>
             </section>
         </main>
 }

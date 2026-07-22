@@ -4,7 +4,7 @@ import "./style.css";
 
 const API="http://localhost:3001";
 
-function Box({right, localSelected, onLocalSelect, onLocalDeselect, localAdded, localDeselected}){
+function Box({right, localSelected, onLocalSelect, onLocalDeselect, localAdded}){
     const [items, setItems] = useState([]);
     const [page, setPage] = useState(0);
     const [q, setQ] = useState("");
@@ -15,22 +15,28 @@ function Box({right, localSelected, onLocalSelect, onLocalDeselect, localAdded, 
         if(right){
             const localArray = Array.from(localSelected);
             const filtered = localArray.filter(x => String(x).includes(q));
-            setItems(p ? x=>[...x,...filtered.slice(p*20, (p+1)*20)]:filtered.slice(0, 20));
+            if(p === 0){
+                setItems(filtered.slice(0, 20));
+            } else {
+                setItems(prev=>[...prev,...filtered.slice(p*20, (p+1)*20)]);
+            }
         } else {
-            const localExtra = [...Array.from(localDeselected), ...Array.from(localAdded)].filter(x => !localSelected.has(x) && String(x).includes(q));
+            const localExtra = [...Array.from(localAdded)].filter(x => !localSelected.has(x) && String(x).includes(q));
             const localExtraUnique = [...new Set(localExtra)];
             
             if(p === 0){
                 let r = await fetch(`${API}/left?page=0&q=${encodeURIComponent(q)}`);
                 let d = await r.json();
-                const combined = [...localExtraUnique, ...d];
+                const filtered = d.filter(x => !localSelected.has(x) && String(x).includes(q));
+                const combined = [...localExtraUnique, ...filtered];
                 const unique = [...new Set(combined)];
                 setItems(unique.slice(0, 20));
             } else {
                 const offset = Math.max(0, p - Math.ceil(localExtraUnique.length / 20));
                 let r = await fetch(`${API}/left?page=${offset}&q=${encodeURIComponent(q)}`);
                 let d = await r.json();
-                setItems(prev=>[...prev,...d]);
+                const filtered = d.filter(x => !localSelected.has(x) && String(x).includes(q));
+                setItems(prev=>[...prev,...filtered]);
             }
         }
     }
@@ -44,7 +50,7 @@ function Box({right, localSelected, onLocalSelect, onLocalDeselect, localAdded, 
         setPage(0);
         load(0);
         if(right)loadFullList();
-    },[q, right, localSelected, localAdded, localDeselected]);
+    },[q, right, localSelected, localAdded]);
     
     const handleDragStart = (e, item) => {
         setDraggedItem(item);
@@ -106,15 +112,9 @@ function App(){
     const [lastSelected,setLastSelected]=useState([]);
     const [localSelected,setLocalSelected]=useState(new Set());
     const [localAdded,setLocalAdded]=useState(new Set());
-    const [localDeselected,setLocalDeselected]=useState(new Set());
     
     const handleLocalSelect = (id) => {
         setLocalSelected(prev => new Set([...prev, id]));
-        setLocalDeselected(prev => {
-            const newSet = new Set(prev);
-            newSet.delete(id);
-            return newSet;
-        });
         fetch(API+"/select",{
             method:"POST",
             headers:{"Content-Type":"application/json"},
@@ -128,7 +128,6 @@ function App(){
             newSet.delete(id);
             return newSet;
         });
-        setLocalDeselected(prev => new Set([...prev, id]));
         fetch(API+"/deselect",{
             method:"POST",
             headers:{"Content-Type":"application/json"},
@@ -140,21 +139,15 @@ function App(){
         const loadState = () => {
             fetch(API+"/state").then(r=>r.json()).then(d=>{
                 if(d.selected){
-                    const currentStr = JSON.stringify(d.selected);
-                    const lastStr = JSON.stringify(lastSelected);
-                    if(currentStr !== lastStr){
-                        setLastSelected(d.selected);
-                        setLocalSelected(new Set(d.selected));
-                        setLocalDeselected(new Set());
-                        setStateKey(prev=>prev+1);
-                    }
+                    setLastSelected(d.selected);
+                    setLocalSelected(new Set(d.selected));
                 }
             });
         };
         loadState();
-        const interval = setInterval(loadState, 1500);
+        const interval = setInterval(loadState, 1000);
         return () => clearInterval(interval);
-    },[lastSelected]);
+    },[]);
 
     async function handleAdd(){
         let id = prompt("ID");
@@ -186,8 +179,8 @@ function App(){
             <button onClick={handleAdd}>Add</button>
             {error && <div className="error">{error}</div>}
             <section key={stateKey}>
-                <Box localSelected = {localSelected} onLocalSelect = {handleLocalSelect} onLocalDeselect = {handleLocalDeselect} localAdded = {localAdded} localDeselected = {localDeselected}/>
-                <Box right localSelected = {localSelected} onLocalSelect = {handleLocalSelect} onLocalDeselect = {handleLocalDeselect} localAdded = {localAdded} localDeselected = {localDeselected}/>
+                <Box localSelected = {localSelected} onLocalSelect = {handleLocalSelect} onLocalDeselect = {handleLocalDeselect} localAdded = {localAdded}/>
+                <Box right localSelected = {localSelected} onLocalSelect = {handleLocalSelect} onLocalDeselect = {handleLocalDeselect} localAdded = {localAdded}/>
             </section>
         </main>
 }

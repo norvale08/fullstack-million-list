@@ -30,18 +30,23 @@ app.get("/right",(req,res)=>{
 
 app.post("/select",(req,res)=>{
  const id = Number(req.body.id);
- if(id && !selected.includes(id)) queue.add.add(id);
+ if(id && !selected.includes(id)) {
+     selected.push(id);
+ }
  res.json({ok:true});
 });
 
 app.post("/reorder",(req,res)=>{
-    queue.update=req.body.items||[];
+    selected = req.body.items||[];
     res.json({ok:true});
 });
 
 app.post("/deselect",(req,res)=>{
     const id = Number(req.body.id);
-    if(id && selected.includes(id)) queue.remove.add(id);
+    if(id && selected.includes(id)) {
+        const idx = selected.indexOf(id);
+        if(idx !== -1) selected.splice(idx, 1);
+    }
     res.json({ok:true});
 });
 
@@ -49,25 +54,11 @@ app.post("/add",(req,res)=>{
     const id=Number(req.body.id);
     if(id && !manuallyAdded.has(id) && !selected.includes(id)){
         manuallyAdded.add(id);
-        queue.add.add(id);
         res.json({ok:true});
     } else {
         res.json({ok:false,error:"Duplicate ID or invalid"});
     }
 });
 
-setInterval(()=>{
-    for(const id of queue.add) if(!selected.includes(id)) selected.push(id);
-    queue.add.clear();
-},10000);
-
-setInterval(()=>{
-    for(const id of queue.remove) {
-        const idx = selected.indexOf(id);
-        if(idx !== -1) selected.splice(idx, 1);
-    }
-    queue.remove.clear();
-    if(queue.update){ selected = queue.update; queue.update=false; }
-},1000);
 
 app.listen(3001,()=>console.log("api on 3001"));
